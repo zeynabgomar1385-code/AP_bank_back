@@ -10,7 +10,6 @@ import service.BankService;
 import service.GroupService;
 import service.ServicesService;
 import storage.JsonUtil;
-
 import java.io.*;
 import java.net.Socket;
 import java.util.List;
@@ -22,7 +21,6 @@ public class ClientHandler implements Runnable {
     private final BankService bank;
     private final GroupService group;
     private final ServicesService services;
-
     private String loggedInUser = null;
     private String loggedInName = null;
 
@@ -41,15 +39,13 @@ public class ClientHandler implements Runnable {
             PrintWriter out = new PrintWriter(new OutputStreamWriter(socket.getOutputStream()), true)
         ) {
             out.println("{\"status\":\"ok\",\"message\":\"connected\"}");
-
             String line;
             while ((line = in.readLine()) != null) {
                 line = line.trim();
                 if (line.isEmpty()) continue;
 
                 try {
-                    String resp = handle(line);
-                    out.println(resp);
+                    out.println(handle(line));
                 } catch (Exception e) {
                     out.println("{\"status\":\"error\",\"message\":" + JsonUtil.quote(e.getMessage()) + "}");
                 }
@@ -59,7 +55,6 @@ public class ClientHandler implements Runnable {
             try { socket.close(); } catch (Exception ignored) {}
         }
     }
-
     private String handle(String jsonLine) {
         Map<String, String> m = JsonUtil.parseObjectToRawMap(jsonLine);
         String action = JsonUtil.rawToString(m.get("action")).toUpperCase();
@@ -88,7 +83,6 @@ public class ClientHandler implements Runnable {
         if (loggedInUser == null) {
             throw new RuntimeException("please login first");
         }
-
         if (action.equals("GET_PROFILE")) {
             return "{"
                 + "\"status\":\"ok\","
@@ -96,7 +90,6 @@ public class ClientHandler implements Runnable {
                 + "\"name\":" + JsonUtil.quote(loggedInName == null ? "" : loggedInName)
                 + "}";
         }
-
         if (action.equals("UPDATE_PROFILE")) {
             String newName = JsonUtil.rawToString(m.get("name"));
             if (newName == null || newName.trim().isEmpty()) throw new RuntimeException("name is required");
@@ -111,7 +104,6 @@ public class ClientHandler implements Runnable {
 
         if (action.equals("GET_ACCOUNTS")) {
             List<Account> accounts = bank.getAccounts(loggedInUser);
-
             String typeFilter = JsonUtil.rawToString(m.get("type"));
             if (typeFilter != null && !typeFilter.trim().isEmpty()) {
                 String tf = typeFilter.trim().toLowerCase();
@@ -129,6 +121,21 @@ public class ClientHandler implements Runnable {
                     .append("\"accountNumber\":").append(JsonUtil.quote(a.getAccountNumber())).append(",")
                     .append("\"balance\":").append(a.getBalance()).append(",")
                     .append("\"type\":").append(JsonUtil.quote(a.getType()))
+                    .append("}");
+            }
+            sb.append("]}");
+            return sb.toString();
+        }
+        if (action.equals("GET_CARDS")) {
+            List<Account> accounts = bank.getAccounts(loggedInUser);
+            StringBuilder sb = new StringBuilder();
+            sb.append("{\"status\":\"ok\",\"cards\":[");
+            for (int i = 0; i < accounts.size(); i++) {
+                if (i > 0) sb.append(",");
+                Account a = accounts.get(i);
+                sb.append("{")
+                    .append("\"accountId\":").append(JsonUtil.quote(a.getId())).append(",")
+                    .append("\"cardNumber\":").append(JsonUtil.quote(a.getCardNumber()))
                     .append("}");
             }
             sb.append("]}");
@@ -163,15 +170,45 @@ public class ClientHandler implements Runnable {
             sb.append("]}");
             return sb.toString();
         }
+        if (action.equals("TRANSFER_CARD")) {
+            String fromAccountId = JsonUtil.rawToString(m.get("fromAccountId"));
+            String toCardNumber = JsonUtil.rawToString(m.get("toCardNumber"));
+            long amount = JsonUtil.rawToLong(m.get("amount"), 0);
 
+            if (fromAccountId == null || fromAccountId.trim().isEmpty()) throw new RuntimeException("fromAccountId is required");
+            if (toCardNumber == null || toCardNumber.trim().isEmpty()) throw new RuntimeException("toCardNumber is required");
+            if (amount <= 0) throw new RuntimeException("amount must be positive");
+
+            Account from = bank.findAccountById(fromAccountId.trim());
+            if (from == null) throw new RuntimeException("from account not found");
+            if (!from.getUsername().equalsIgnoreCase(loggedInUser)) throw new RuntimeException("access denied");
+
+            bank.transferCardToCard(from.getId(), toCardNumber.trim(), amount);
+            return "{\"status\":\"ok\",\"message\":\"transfer done\"}";
+        }
+
+        if (action.equals("TRANSFER_SHEBA")) {
+            String fromAccountId = JsonUtil.rawToString(m.get("fromAccountId"));
+            String toSheba = JsonUtil.rawToString(m.get("toSheba"));
+            long amount = JsonUtil.rawToLong(m.get("amount"), 0);
+
+            if (fromAccountId == null || fromAccountId.trim().isEmpty()) throw new RuntimeException("fromAccountId is required");
+            if (toSheba == null || toSheba.trim().isEmpty()) throw new RuntimeException("toSheba is required");
+            if (amount <= 0) throw new RuntimeException("amount must be positive");
+
+            Account from = bank.findAccountById(fromAccountId.trim());
+            if (from == null) throw new RuntimeException("from account not found");
+            if (!from.getUsername().equalsIgnoreCase(loggedInUser)) throw new RuntimeException("access denied");
+
+            bank.transferSheba(from.getId(), toSheba.trim(), amount);
+            return "{\"status\":\"ok\",\"message\":\"sheba transfer done\"}";
+        }
         if (action.equals("BUY_TOPUP")) {
             String accountId = JsonUtil.rawToString(m.get("accountId"));
             String operator = JsonUtil.rawToString(m.get("operator"));
             String phone = JsonUtil.rawToString(m.get("phone"));
             long amount = JsonUtil.rawToLong(m.get("amount"), 0);
-
             Transaction t = services.buyTopUp(accountId, operator, phone, amount);
-
             return "{"
                 + "\"status\":\"ok\","
                 + "\"message\":\"topup done\","
@@ -192,9 +229,7 @@ public class ClientHandler implements Runnable {
             String billId = JsonUtil.rawToString(m.get("billId"));
             String payId = JsonUtil.rawToString(m.get("payId"));
             long amount = JsonUtil.rawToLong(m.get("amount"), 0);
-
             Transaction t = services.payBill(accountId, billType, billId, payId, amount);
-
             return "{"
                 + "\"status\":\"ok\","
                 + "\"message\":\"bill paid\","
@@ -208,11 +243,11 @@ public class ClientHandler implements Runnable {
                 + "}"
                 + "}";
         }
-
         if (action.equals("CREATE_GROUP")) {
             String name = JsonUtil.rawToString(m.get("name"));
             String currency = JsonUtil.rawToString(m.get("currency"));
             String desc = JsonUtil.rawToString(m.get("description"));
+            if (currency == null || currency.trim().isEmpty()) currency = "IRR";
             Group g = group.createGroup(name, loggedInUser, currency, desc);
             return "{\"status\":\"ok\",\"groupId\":" + JsonUtil.quote(g.getId()) + "}";
         }
@@ -237,8 +272,7 @@ public class ClientHandler implements Runnable {
             sb.append("]}");
             return sb.toString();
         }
-
-        if (action.equals("GET_GROUP_DETAIL")) {
+        if (action.equals("GET_GROUP") || action.equals("GET_GROUP_DETAIL")) {
             String groupId = JsonUtil.rawToString(m.get("groupId"));
             Group g = group.getGroupById(groupId);
             if (g == null) throw new RuntimeException("group not found");
@@ -280,7 +314,7 @@ public class ClientHandler implements Runnable {
             return sb.toString();
         }
 
-        if (action.equals("ADD_MEMBER")) {
+        if (action.equals("ADD_MEMBER") || action.equals("ADD_GROUP_MEMBER")) {
             String groupId = JsonUtil.rawToString(m.get("groupId"));
             String username = JsonUtil.rawToString(m.get("username"));
 
@@ -319,7 +353,6 @@ public class ClientHandler implements Runnable {
                 + "}"
                 + "}";
         }
-
         if (action.equals("GET_GROUP_NET")) {
             String groupId = JsonUtil.rawToString(m.get("groupId"));
             Group g = group.getGroupById(groupId);
@@ -347,7 +380,6 @@ public class ClientHandler implements Runnable {
             sb.append("]}");
             return sb.toString();
         }
-
         throw new RuntimeException("unknown action");
     }
 }
