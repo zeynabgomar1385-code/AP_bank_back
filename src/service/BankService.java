@@ -202,4 +202,101 @@ public class BankService {
         out.sort((a, b) -> Long.compare(b.getTimestamp(), a.getTimestamp()));
         return out;
     }
+
+    public List<Transaction> searchTransactions(String accountId, String type, String category, Long fromTs, Long toTs, Long minAmount) {
+    if (accountId == null || accountId.trim().isEmpty()) throw new RuntimeException("accountId is required");
+
+    String tFilter = type == null ? null : type.trim().toLowerCase();
+    String cFilter = category == null ? null : category.trim().toLowerCase();
+
+    List<Transaction> all = store.loadTransactions();
+    List<Transaction> out = new ArrayList<>();
+
+    for (Transaction t : all) {
+        if (!t.getAccountId().equals(accountId.trim())) continue;
+
+        if (tFilter != null && !tFilter.isEmpty()) {
+            if (!t.getType().trim().toLowerCase().equals(tFilter)) continue;
+        }
+
+        if (cFilter != null && !cFilter.isEmpty()) {
+            if (!t.getCategory().trim().toLowerCase().equals(cFilter)) continue;
+        }
+
+        if (fromTs != null && t.getTimestamp() < fromTs) continue;
+        if (toTs != null && t.getTimestamp() > toTs) continue;
+
+        if (minAmount != null && t.getAmount() < minAmount) continue;
+
+        out.add(t);
+    }
+
+    out.sort((a, b) -> Long.compare(b.getTimestamp(), a.getTimestamp()));
+    return out;
+}
+
+    public List<Transaction> searchTransactions(
+        String username,
+        String accountId,
+        String type,
+        String category,
+        String q,
+        Long minAmount,
+        Long maxAmount,
+        Long fromTs,
+        Long toTs,
+        int limit
+    ) {
+        if (username == null || username.trim().isEmpty()) throw new RuntimeException("username is required");
+
+        String accId = accountId == null ? "" : accountId.trim();
+        String typeF = type == null ? "" : type.trim().toLowerCase();
+        String catF = category == null ? "" : category.trim().toLowerCase();
+        String qF = q == null ? "" : q.trim().toLowerCase();
+
+        Set<String> allowedAccountIds = new HashSet<>();
+        for (Account a : store.loadAccounts()) {
+            if (a.getUsername().equalsIgnoreCase(username)) allowedAccountIds.add(a.getId());
+        }
+        if (allowedAccountIds.isEmpty()) return new ArrayList<>();
+
+        if (!accId.isEmpty()) {
+            if (!allowedAccountIds.contains(accId)) throw new RuntimeException("access denied");
+            allowedAccountIds.clear();
+            allowedAccountIds.add(accId);
+        }
+
+        List<Transaction> all = store.loadTransactions();
+        List<Transaction> out = new ArrayList<>();
+
+        for (Transaction t : all) {
+            if (!allowedAccountIds.contains(t.getAccountId())) continue;
+
+            if (!typeF.isEmpty() && !t.getType().toLowerCase().equals(typeF)) continue;
+            if (!catF.isEmpty() && !t.getCategory().toLowerCase().equals(catF)) continue;
+
+            long amt = t.getAmount();
+            if (minAmount != null && amt < minAmount) continue;
+            if (maxAmount != null && amt > maxAmount) continue;
+
+            long ts = t.getTimestamp();
+            if (fromTs != null && ts < fromTs) continue;
+            if (toTs != null && ts > toTs) continue;
+
+            if (!qF.isEmpty()) {
+                String desc = t.getDescription() == null ? "" : t.getDescription().toLowerCase();
+                String cat = t.getCategory() == null ? "" : t.getCategory().toLowerCase();
+                String tp = t.getType() == null ? "" : t.getType().toLowerCase();
+                if (!(desc.contains(qF) || cat.contains(qF) || tp.contains(qF))) continue;
+            }
+
+            out.add(t);
+        }
+
+        out.sort((a, b) -> Long.compare(b.getTimestamp(), a.getTimestamp()));
+
+        int lim = limit <= 0 ? 50 : Math.min(limit, 200);
+        if (out.size() > lim) return new ArrayList<>(out.subList(0, lim));
+        return out;
+    }
 }
