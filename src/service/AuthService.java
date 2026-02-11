@@ -65,6 +65,36 @@ public class AuthService {
         store.saveUsers(users);
     }
 
+    public void changePassword(String username, String oldPassword, String newPassword) {
+        username = username == null ? "" : username.trim();
+        oldPassword = oldPassword == null ? "" : oldPassword.trim();
+        newPassword = newPassword == null ? "" : newPassword.trim();
+
+        if (username.isEmpty() || oldPassword.isEmpty() || newPassword.isEmpty()) {
+            throw new RuntimeException("username/oldPassword/newPassword is required");
+        }
+        if (newPassword.length() < 4) {
+            throw new RuntimeException("new password is too short");
+        }
+        if (newPassword.equals(oldPassword)) {
+            throw new RuntimeException("new password must be different");
+        }
+
+        List<User> users = store.loadUsers();
+        User target = null;
+        for (User u : users) {
+            if (u.getUsername().equalsIgnoreCase(username)) {
+                target = u;
+                break;
+            }
+        }
+        if (target == null) throw new RuntimeException("user not found");
+        if (!target.getPassword().equals(oldPassword)) throw new RuntimeException("wrong password");
+
+        target.setPassword(newPassword);
+        store.saveUsers(users);
+    }
+
     public boolean userExists(String username) {
         List<User> users = store.loadUsers();
         for (User u : users) {
