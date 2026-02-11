@@ -115,6 +115,48 @@ public class GroupService {
         return net;
     }
 
+    public List<Group> getGroupsForUser(String username) {
+        username = username == null ? "" : username.trim();
+        if (username.isEmpty()) return new ArrayList<>();
+
+        List<Group> out = new ArrayList<>();
+        for (Group g : store.loadGroups()) {
+            boolean ok = false;
+
+            if (g.getOwnerUsername() != null && g.getOwnerUsername().equalsIgnoreCase(username)) ok = true;
+
+            if (!ok && g.getMembers() != null) {
+                for (String m : g.getMembers()) {
+                    if (m != null && m.equalsIgnoreCase(username)) { ok = true; break; }
+                }
+            }
+
+            if (ok) out.add(g);
+        }
+
+        out.sort((a, b) -> Long.compare(a.getCreatedAt(), b.getCreatedAt()));
+        return out;
+    }
+
+    public List<Expense> getExpensesForGroup(String groupId) {
+        Group g = getGroupById(groupId);
+        if (g == null) throw new RuntimeException("group not found");
+
+        Map<String, Expense> expenseMap = new HashMap<>();
+        for (Expense e : store.loadExpenses()) expenseMap.put(e.getId(), e);
+
+        List<Expense> out = new ArrayList<>();
+        if (g.getExpenseIds() != null) {
+            for (String eid : g.getExpenseIds()) {
+                Expense e = expenseMap.get(eid);
+                if (e != null) out.add(e);
+            }
+        }
+
+        out.sort((a, b) -> Long.compare(a.getTimestamp(), b.getTimestamp()));
+        return out;
+    }
+
     public String exportReport(String groupId, String outDir) {
         Group g = getGroupById(groupId);
         if (g == null) throw new RuntimeException("group not found");
